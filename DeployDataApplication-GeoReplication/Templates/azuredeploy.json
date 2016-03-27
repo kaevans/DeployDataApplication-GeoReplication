@@ -1,0 +1,217 @@
+﻿{
+
+  "$schema": "http://schema.management.azure.com/schemas/2014-04-01-preview/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters":
+  {
+    "administratorLogin":
+    {
+      "type": "string"
+    },
+    "administratorLoginPassword":
+    {
+      "type": "securestring"
+    },
+    "databaseName":
+    {
+      "type": "string"
+    },
+    "primaryLocation":
+    {
+      "type": "string"
+    },
+    "secondaryLocation":
+    {
+      "type": "string"
+    },
+    "_artifactsLocation":
+    {
+      "type": "string"
+    },
+    "_artifactsLocationSasToken":
+    {
+      "type": "securestring"
+    },
+    "projectName":
+    {
+      "type": "string"
+    },
+    "deployPackageFolder":
+    {
+      "type": "string"
+    },
+    "deployPackageFileName":
+    {
+      "type": "string"
+    }
+  },
+  "variables":
+  {
+    "collation": "SQL_Latin1_General_CP1_CI_AS",
+    "edition": "Premium",
+    "maxSizeBytes": "1073741824",
+    "requestedServiceObjectiveName": "P1",
+    "storageKeyType": "SharedAccessKey",
+    "version": "12.0",
+    "primaryServerName": "[tolower(concat('sqldemo-', uniqueString(resourceGroup().id), '-', parameters('primaryLocation')))]",
+    "secondaryServerName": "[tolower(concat('sqldemo-', uniqueString(resourceGroup().id), '-', parameters('secondaryLocation')))]",
+    "secondaryServerCreateMode": "OnlineSecondary"
+  },
+  "resources":
+  [
+    {
+      "name": "[variables('primaryServerName')]",
+      "type": "Microsoft.Sql/servers",
+      "apiVersion": "2014-04-01-preview",
+      "location": "[parameters('primaryLocation')]",
+      "properties":
+      {
+        "administratorLogin": "[parameters('administratorLogin')]",
+        "administratorLoginPassword": "[parameters('administratorLoginPassword')]",
+        "version": "[variables('version')]"
+      },
+      "tags":
+      {
+        "displayName": "primaryServer"
+      },
+      "resources":
+      [
+        {
+          "name": "AllowAllWindowsAzureIps",
+          "type": "firewallrules",
+          "apiVersion": "2014-04-01-preview",
+          "location": "[parameters('primaryLocation')]",
+          "dependsOn":
+          [
+            "[concat('Microsoft.Sql/servers/', variables('primaryServerName'))]"
+          ],
+          "properties":
+          {
+            "endIpAddress": "0.0.0.0",
+            "startIpAddress": "0.0.0.0"
+          }
+        },
+        {
+          "name": "[parameters('databaseName')]",
+          "type": "databases",
+          "apiVersion": "2014-04-01-preview",
+          "location": "[parameters('primaryLocation')]",
+          "dependsOn":
+          [
+            "[concat('Microsoft.Sql/servers/', variables('primaryServerName'))]"
+          ],
+          "properties":
+          {
+            "collation": "[variables('collation')]",
+            "edition": "[variables('edition')]",
+            "maxSizeBytes": "[variables('maxSizeBytes')]",
+            "requestedServiceObjectiveName": "[variables('requestedServiceObjectiveName')]"
+          },
+          "tags":
+          {
+            "displayName": "primaryDatabase"
+          },
+          "resources":
+          [
+            {
+              "name": "Import",
+              "type": "extensions",
+              "apiVersion": "2014-04-01-preview",
+              "dependsOn":
+              [
+                "[concat('Microsoft.Sql/servers/', variables('primaryServerName'), '/databases/', parameters('databaseName'))]"
+              ],
+              "properties":
+              {
+                "storageKeyType": "[variables('storageKeyType')]",
+                "storageKey": "[parameters('_artifactsLocationSasToken')]",
+                "storageUri": "[concat(parameters('_artifactsLocation'),'/', parameters('projectName'), '/', parameters('deployPackageFolder'),'/', parameters('deployPackageFileName'))]",
+                "administratorLogin": "[parameters('administratorLogin')]",
+                "administratorLoginPassword": "[parameters('administratorLoginPassword')]",
+                "operationMode": "Import"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "[variables('secondaryServerName')]",
+      "type": "Microsoft.Sql/servers",
+      "location": "[parameters('secondaryLocation')]",
+      "apiVersion": "2014-04-01-preview",
+      "dependsOn":
+      [
+      ],
+      "tags":
+      {
+        "displayName": "secondaryServer"
+      },
+      "properties":
+      {
+        "administratorLogin": "[parameters('administratorLogin')]",
+        "administratorLoginPassword": "[parameters('administratorLoginPassword')]",
+        "version": "[variables('version')]"
+      },
+      "resources":
+      [
+        {
+          "name": "AllowAllWindowsAzureIps",
+          "type": "firewallrules",
+          "location": "[parameters('secondaryLocation')]",
+          "apiVersion": "2014-04-01-preview",
+          "dependsOn":
+          [
+            "[concat('Microsoft.Sql/servers/', variables('secondaryServerName'))]"
+          ],
+          "properties":
+          {
+            "startIpAddress": "0.0.0.0",
+            "endIpAddress": "0.0.0.0"
+          }
+        },
+        {
+          "apiVersion": "2014-04-01-preview",
+          "dependsOn":
+          [
+            "[concat('Microsoft.Sql/servers/', variables('secondaryServerName'))]",
+            "[concat('Microsoft.Sql/servers/', variables('primaryServerName'))]",
+            "[concat('Microsoft.Sql/servers/', variables('primaryServerName'), '/databases/',parameters('databaseName'))]"
+          ],
+          "location": "[parameters('secondaryLocation')]",
+          "name": "[parameters('databaseName')]",
+          "tags":
+          {
+            "displayName": "secondaryDatabase"          
+          },
+          "properties":
+          {
+            "createMode": "[variables('secondaryServerCreateMode')]",
+            "sourceDatabaseId": "[concat(resourceGroup().id,'/providers/Microsoft.Sql/servers/', variables('primaryServerName'), '/databases/',parameters('databaseName'))]",
+            "requestedServiceObjectiveName": "[variables('requestedServiceObjectiveName')]"
+          },
+          "type": "databases"
+        }
+
+      ]
+    }
+  ],
+  "outputs":
+  {
+    "primaryServerName":
+    {
+      "type": "object",
+      "value": "[reference(variables('primaryServerName'))]"
+    },
+    "artifactsLocation":
+    {
+      "type": "string",
+      "value": "[parameters('_artifactsLocation')]"
+    },
+    "artifactsLocationSasToken":
+    {
+      "type": "string",
+      "value": "[parameters('_artifactsLocationSasToken').length]"
+    }
+  }
+}
